@@ -4,8 +4,13 @@ import { useEffect, useMemo, useState, FormEvent, ChangeEvent } from "react";
 import { supabase, Participant, DateIdea, Vote, IdeaCategory } from "@/lib/supabaseClient";
 
 const SESSION_KEY = "next-up-participant";
+const ADMIN_EMAIL = "olivaribryan@hotmail.com";
 
 type CostType = "free" | "budget";
+
+function canManage(idea: DateIdea, me: Participant): boolean {
+  return idea.created_by === me.id || me.email.toLowerCase() === ADMIN_EMAIL;
+}
 
 const CATEGORY_LABELS: Record<IdeaCategory, string> = {
   restaurant: "Restaurant",
@@ -347,6 +352,11 @@ function App({ me, onLeave }: { me: Participant; onLeave: () => void }) {
     await supabase.from("date_ideas").update(fields).eq("id", id);
   }
 
+  async function deleteIdea(idea: DateIdea) {
+    if (!canManage(idea, me)) return;
+    await supabase.from("date_ideas").delete().eq("id", idea.id);
+  }
+
   const pollIdeas = ideas
     .filter((i) => i.status === "suggested")
     .sort((a, b) => (votesByIdea[b.id]?.length || 0) - (votesByIdea[a.id]?.length || 0));
@@ -392,16 +402,20 @@ function App({ me, onLeave }: { me: Participant; onLeave: () => void }) {
           onVote={toggleVote}
           onAdd={addIdea}
           onSchedule={scheduleIdea}
+          onUpdate={updateIdea}
+          onDelete={deleteIdea}
         />
       ) : (
         <CalendarTab
           upcoming={upcoming}
           past={past}
           participants={participants}
+          me={me}
           onMarkPast={markPast}
           onRestore={restoreIdea}
           onMoveToPoll={moveToPoll}
           onUpdate={updateIdea}
+          onDelete={deleteIdea}
         />
       )}
 
@@ -418,6 +432,8 @@ function PollTab({
   onVote,
   onAdd,
   onSchedule,
+  onUpdate,
+  onDelete,
 }: {
   ideas: DateIdea[];
   votesByIdea: Record<string, Vote[]>;
@@ -436,8 +452,11 @@ function PollTab({
     proposed_date: string;
   }) => Promise<void>;
   onSchedule: (idea: DateIdea, date: string) => void;
+  onUpdate: (id: string, fields: Record<string, unknown>) => Promise<void>;
+  onDelete: (idea: DateIdea) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<IdeaCategory>("restaurant");
   const [categoryOther, setCategoryOther] = useState("");
@@ -475,6 +494,17 @@ function PollTab({
     setCostType("free");
     setBudget("");
     setOpen(false);
+  }
+
+  async function handleSaveEdit(id: string, fields: Record<string, unknown>) {
+    await onUpdate(id, fields);
+    setEditingId(null);
+  }
+
+  function handleDelete(idea: DateIdea) {
+    if (window.confirm(`Delete "${idea.title}"? This can't be undone.`)) {
+      onDelete(idea);
+    }
   }
 
   return (
@@ -575,6 +605,20 @@ function PollTab({
             const mine = ideaVotes.some((v) => v.participant_id === me.id);
             const suggester = idea.created_by ? participants[idea.created_by] : null;
             const cat = categoryLabel(idea);
+            const manageable = canManage(idea, me);
+
+            if (editingId === idea.id) {
+              return (
+                <div className="card idea-card" key={idea.id}>
+                  <EditIdeaForm
+                    idea={idea}
+                    onCancel={() => setEditingId(null)}
+                    onSave={(fields) => handleSaveEdit(idea.id, fields)}
+                  />
+                </div>
+              );
+            }
+
             return (
               <div className="card idea-card" key={idea.id}>
                 <div className="idea-main">
@@ -609,6 +653,16 @@ function PollTab({
                     />
                     <span className="idea-location">put it on the calendar</span>
                   </div>
+                  {manageable && (
+                    <div className="schedule-row">
+                      <button className="btn secondary" onClick={() => setEditingId(idea.id)}>
+                        Edit
+                      </button>
+                      <button className="btn secondary" onClick={() => handleDelete(idea)}>
+                        Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="vote-block">
                   <button className={`vote-btn ${mine ? "voted" : ""}`} onClick={() => onVote(idea)} aria-label="Vote for this idea">
@@ -638,18 +692,22 @@ function CalendarTab({
   upcoming,
   past,
   participants,
+  me,
   onMarkPast,
   onRestore,
   onMoveToPoll,
   onUpdate,
+  onDelete,
 }: {
   upcoming: DateIdea[];
   past: DateIdea[];
   participants: Record<string, Participant>;
+  me: Participant;
   onMarkPast: (idea: DateIdea) => void;
   onRestore: (idea: DateIdea) => void;
   onMoveToPoll: (idea: DateIdea) => void;
   onUpdate: (id: string, fields: Record<string, unknown>) => Promise<void>;
+  onDelete: (idea: DateIdea) => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -666,6 +724,12 @@ function CalendarTab({
   async function handleSave(id: string, fields: Record<string, unknown>) {
     await onUpdate(id, fields);
     setEditingId(null);
+  }
+
+  function handleDelete(idea: DateIdea) {
+    if (window.confirm(`Delete "${idea.title}"? This can't be undone.`)) {
+      onDelete(idea);
+    }
   }
 
   return (
@@ -730,9 +794,16 @@ function CalendarTab({
                     <button className="btn secondary" onClick={() => onMoveToPoll(idea)}>
                       Move back to poll
                     </button>
-                    <button className="btn secondary" onClick={() => setEditingId(idea.id)}>
-                      Edit
-                    </button>
+                    {canManage(idea, me) && (
+                      <>
+                        <button className="btn secondary" onClick={() => setEditingId(idea.id)}>
+                          Edit
+                        </button>
+                        <button className="btn secondary" onClick={() => handleDelete(idea)}>
+                          Delete
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -769,9 +840,16 @@ function CalendarTab({
                   <button className="btn secondary" onClick={() => onMoveToPoll(idea)}>
                     Move back to poll
                   </button>
-                  <button className="btn secondary" onClick={() => setEditingId(idea.id)}>
-                    Edit
-                  </button>
+                  {canManage(idea, me) && (
+                    <>
+                      <button className="btn secondary" onClick={() => setEditingId(idea.id)}>
+                        Edit
+                      </button>
+                      <button className="btn secondary" onClick={() => handleDelete(idea)}>
+                        Delete
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             );
