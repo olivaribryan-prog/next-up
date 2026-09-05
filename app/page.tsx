@@ -332,6 +332,17 @@ function App({ me, onLeave }: { me: Participant; onLeave: () => void }) {
     await supabase.from("date_ideas").update({ status: "past" }).eq("id", idea.id);
   }
 
+  async function restoreIdea(idea: DateIdea) {
+    await supabase
+      .from("date_ideas")
+      .update({ status: idea.proposed_date ? "scheduled" : "suggested" })
+      .eq("id", idea.id);
+  }
+
+  async function updateIdea(id: string, fields: Record<string, unknown>) {
+    await supabase.from("date_ideas").update(fields).eq("id", id);
+  }
+
   const pollIdeas = ideas
     .filter((i) => i.status === "suggested")
     .sort((a, b) => (votesByIdea[b.id]?.length || 0) - (votesByIdea[a.id]?.length || 0));
@@ -379,7 +390,14 @@ function App({ me, onLeave }: { me: Participant; onLeave: () => void }) {
           onSchedule={scheduleIdea}
         />
       ) : (
-        <CalendarTab upcoming={upcoming} past={past} participants={participants} onMarkPast={markPast} />
+        <CalendarTab
+          upcoming={upcoming}
+          past={past}
+          participants={participants}
+          onMarkPast={markPast}
+          onRestore={restoreIdea}
+          onUpdate={updateIdea}
+        />
       )}
 
       <FeedbackFooter me={me} />
@@ -616,12 +634,18 @@ function CalendarTab({
   past,
   participants,
   onMarkPast,
+  onRestore,
+  onUpdate,
 }: {
   upcoming: DateIdea[];
   past: DateIdea[];
   participants: Record<string, Participant>;
   onMarkPast: (idea: DateIdea) => void;
+  onRestore: (idea: DateIdea) => void;
+  onUpdate: (id: string, fields: Record<string, unknown>) => Promise<void>;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const grouped = useMemo(() => {
     const map: Record<string, DateIdea[]> = {};
     upcoming.forEach((idea) => {
@@ -631,6 +655,11 @@ function CalendarTab({
     });
     return map;
   }, [upcoming]);
+
+  async function handleSave(id: string, fields: Record<string, unknown>) {
+    await onUpdate(id, fields);
+    setEditingId(null);
+  }
 
   return (
     <div>
@@ -647,6 +676,19 @@ function CalendarTab({
               const { day, dow } = formatDay(idea.proposed_date!);
               const suggester = idea.created_by ? participants[idea.created_by] : null;
               const cat = categoryLabel(idea);
+
+              if (editingId === idea.id) {
+                return (
+                  <div className="calendar-item" key={idea.id}>
+                    <EditIdeaForm
+                      idea={idea}
+                      onCancel={() => setEditingId(null)}
+                      onSave={(fields) => handleSave(idea.id, fields)}
+                    />
+                  </div>
+                );
+              }
+
               return (
                 <div className="calendar-item" key={idea.id}>
                   <div className="calendar-date">
@@ -674,9 +716,14 @@ function CalendarTab({
                     )}
                     {suggester && <div className="suggested-by">Suggested by {suggester.name}</div>}
                   </div>
-                  <button className="btn secondary" onClick={() => onMarkPast(idea)}>
-                    Mark done
-                  </button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                    <button className="btn secondary" onClick={() => onMarkPast(idea)}>
+                      Mark as past
+                    </button>
+                    <button className="btn secondary" onClick={() => setEditingId(idea.id)}>
+                      Edit
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -687,17 +734,158 @@ function CalendarTab({
       {past.length > 0 && (
         <div className="calendar-month">
           <h3>Past</h3>
-          {past.map((idea) => (
-            <div className="calendar-item" key={idea.id}>
-              <div className="idea-main" style={{ flex: 1 }}>
-                <h3>{idea.title}</h3>
-                {idea.proposed_date && <div className="idea-location">{formatDay(idea.proposed_date).month}</div>}
+          {past.map((idea) => {
+            if (editingId === idea.id) {
+              return (
+                <div className="calendar-item" key={idea.id}>
+                  <EditIdeaForm
+                    idea={idea}
+                    onCancel={() => setEditingId(null)}
+                    onSave={(fields) => handleSave(idea.id, fields)}
+                  />
+                </div>
+              );
+            }
+            return (
+              <div className="calendar-item" key={idea.id}>
+                <div className="idea-main" style={{ flex: 1 }}>
+                  <h3>{idea.title}</h3>
+                  {idea.proposed_date && <div className="idea-location">{formatDay(idea.proposed_date).month}</div>}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                  <button className="btn secondary" onClick={() => onRestore(idea)}>
+                    Move back to Upcoming
+                  </button>
+                  <button className="btn secondary" onClick={() => setEditingId(idea.id)}>
+                    Edit
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
+  );
+}
+
+function EditIdeaForm({
+  idea,
+  onCancel,
+  onSave,
+}: {
+  idea: DateIdea;
+  onCancel: () => void;
+  onSave: (fields: Record<string, unknown>) => void;
+}) {
+  const [title, setTitle] = useState(idea.title);
+  const [category, setCategory] = useState<IdeaCategory>(idea.category ?? "restaurant");
+  const [categoryOther, setCategoryOther] = useState(idea.category_other ?? "");
+  const [description, setDescription] = useState(idea.description ?? "");
+  const [location, setLocation] = useState(idea.location ?? "");
+  const [socialLink, setSocialLink] = useState(idea.social_link ?? "");
+  const [proposedDate, setProposedDate] = useState(idea.proposed_date ?? "");
+  const [costType, setCostType] = useState<CostType>(idea.cost_type);
+  const [budget, setBudget] = useState(idea.budget_amount ? String(idea.budget_amount) : "");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    setSaving(true);
+    await onSave({
+      title: title.trim(),
+      category,
+      category_other: category === "other" ? categoryOther.trim() || null : null,
+      description: description.trim() || null,
+      location: location.trim() || null,
+      social_link: socialLink.trim() || null,
+      proposed_date: proposedDate || null,
+      cost_type: costType,
+      budget_amount: costType === "budget" && budget ? Number(budget) : null,
+      status: proposedDate ? "scheduled" : "suggested",
+    });
+    setSaving(false);
+  }
+
+  return (
+    <form className="form-grid" style={{ flex: 1, marginBottom: 0 }} onSubmit={handleSubmit}>
+      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Activity name — Place name" required />
+
+      <div className="form-row">
+        <select value={category} onChange={(e) => setCategory(e.target.value as IdeaCategory)}>
+          <option value="restaurant">Restaurant</option>
+          <option value="bar">Bar</option>
+          <option value="park">Park</option>
+          <option value="exercise">Exercise</option>
+          <option value="other">Other</option>
+        </select>
+        {category === "other" && (
+          <input
+            value={categoryOther}
+            onChange={(e) => setCategoryOther(e.target.value)}
+            placeholder="What kind of activity?"
+          />
+        )}
+      </div>
+
+      <textarea
+        rows={2}
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Any details worth sharing"
+      />
+
+      <input type="url" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Google Maps link" />
+      <input
+        type="url"
+        value={socialLink}
+        onChange={(e) => setSocialLink(e.target.value)}
+        placeholder="Social media link (optional)"
+      />
+
+      <div className="form-row">
+        <div>
+          <label className="field-label" htmlFor={`edit-date-${idea.id}`}>Date</label>
+          <input
+            id={`edit-date-${idea.id}`}
+            type="date"
+            value={proposedDate}
+            onChange={(e) => setProposedDate(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="form-row">
+        <div className="cost-toggle">
+          <button type="button" className={costType === "free" ? "active" : ""} onClick={() => setCostType("free")}>
+            Free
+          </button>
+          <button type="button" className={costType === "budget" ? "active" : ""} onClick={() => setCostType("budget")}>
+            Has a cost
+          </button>
+        </div>
+        {costType === "budget" && (
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={budget}
+            onChange={(e) => setBudget(e.target.value)}
+            placeholder="Approx. cost ($)"
+          />
+        )}
+      </div>
+
+      <div className="form-row">
+        <button className="btn" type="submit" disabled={saving}>
+          {saving ? "Saving…" : "Save changes"}
+        </button>
+        <button className="btn secondary" type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
