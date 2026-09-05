@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, FormEvent } from "react";
+import { useEffect, useMemo, useState, FormEvent, ChangeEvent } from "react";
 import { supabase, Participant, DateIdea, Vote, IdeaCategory } from "@/lib/supabaseClient";
 
 const SESSION_KEY = "next-up-participant";
@@ -48,6 +48,116 @@ export default function Home() {
   if (!me) return <JoinGate onJoined={setMe} />;
 
   return <App me={me} onLeave={() => { clearSession(); setMe(null); }} />;
+}
+
+const DEFAULT_GALLERY = ["/gallery/friends-1.jpg", "/gallery/friends-2.jpg", "/gallery/friends-3.jpg"];
+
+function WelcomeCarousel() {
+  const [photos, setPhotos] = useState<string[]>(DEFAULT_GALLERY);
+  const [index, setIndex] = useState(0);
+  const [uploading, setUploading] = useState(false);
+
+  async function loadUploaded() {
+    const { data, error } = await supabase.storage.from("gallery").list("", {
+      sortBy: { column: "created_at", order: "asc" },
+    });
+    if (error || !data) return;
+    const uploaded = data
+      .filter((f) => f.name && !f.name.startsWith("."))
+      .map((f) => supabase.storage.from("gallery").getPublicUrl(f.name).data.publicUrl);
+    if (uploaded.length) {
+      setPhotos([...DEFAULT_GALLERY, ...uploaded]);
+    }
+  }
+
+  useEffect(() => {
+    loadUploaded();
+  }, []);
+
+  useEffect(() => {
+    if (photos.length < 2) return;
+    const timer = setInterval(() => {
+      setIndex((i) => (i + 1) % photos.length);
+    }, 4500);
+    return () => clearInterval(timer);
+  }, [photos.length]);
+
+  useEffect(() => {
+    if (index >= photos.length) setIndex(0);
+  }, [photos.length, index]);
+
+  function goTo(i: number) {
+    setIndex(((i % photos.length) + photos.length) % photos.length);
+  }
+
+  async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    const path = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const { error } = await supabase.storage.from("gallery").upload(path, file);
+    setUploading(false);
+    if (!error) {
+      const url = supabase.storage.from("gallery").getPublicUrl(path).data.publicUrl;
+      setPhotos((prev) => {
+        const next = [...prev, url];
+        setIndex(next.length - 1);
+        return next;
+      });
+    }
+  }
+
+  return (
+    <div className="join-carousel">
+      {photos.map((src, i) => (
+        <img
+          key={src + i}
+          src={src}
+          alt="The crew"
+          className="join-carousel-img"
+          style={{ opacity: i === index ? 1 : 0 }}
+        />
+      ))}
+
+      {photos.length > 1 && (
+        <>
+          <button
+            type="button"
+            aria-label="Previous photo"
+            className="carousel-arrow prev"
+            onClick={() => goTo(index - 1)}
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            aria-label="Next photo"
+            className="carousel-arrow next"
+            onClick={() => goTo(index + 1)}
+          >
+            ›
+          </button>
+          <div className="carousel-dots">
+            {photos.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                aria-label={`Go to photo ${i + 1}`}
+                className={`carousel-dot${i === index ? " active" : ""}`}
+                onClick={() => goTo(i)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      <label className="carousel-upload">
+        {uploading ? "Uploading…" : "+ Add photo"}
+        <input type="file" accept="image/*" onChange={handleUpload} disabled={uploading} hidden />
+      </label>
+    </div>
+  );
 }
 
 function JoinGate({ onJoined }: { onJoined: (p: Participant) => void }) {
@@ -102,13 +212,13 @@ function JoinGate({ onJoined }: { onJoined: (p: Participant) => void }) {
   return (
     <div className="join-wrap">
       <div className="join-card">
-        <img src="/friends-photo.jpg" alt="The crew" className="join-photo" />
+        <WelcomeCarousel />
         <div className="join-card-body">
           <div className="join-heading">
             <h1>Next Round</h1>
             <span className="beta-badge">Beta</span>
           </div>
-          <p>Suggest plans, vote on your favorites, and keep track of what&rsquo;s coming up. Just tell us who you are.</p>
+          <p>Your crew, always planning the next one. Suggest a spot, vote on your favorites, and never miss what&rsquo;s coming up. Just tell us who you are.</p>
           <form onSubmit={handleSubmit}>
             <div>
               <label className="field-label" htmlFor="name">Name</label>
