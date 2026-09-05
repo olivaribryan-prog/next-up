@@ -18,11 +18,16 @@ export type Participant = {
   created_at: string;
 };
 
+export type IdeaCategory = "restaurant" | "bar" | "park" | "exercise" | "other";
+
 export type DateIdea = {
   id: string;
   title: string;
   description: string | null;
   location: string | null;
+  social_link: string | null;
+  category: IdeaCategory | null;
+  category_other: string | null;
   cost_type: "free" | "budget";
   budget_amount: number | null;
   proposed_date: string | null;
@@ -35,5 +40,12 @@ export type Vote = {
   id: string;
   date_idea_id: string;
   participant_id: string;
+  created_at: string;
+};
+
+export type Feedback = {
+  id: string;
+  participant_id: string | null;
+  message: string;
   created_at: string;
 };

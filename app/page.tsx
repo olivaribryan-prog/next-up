@@ -1,11 +1,25 @@
 "use client";
 
 import { useEffect, useMemo, useState, FormEvent } from "react";
-import { supabase, Participant, DateIdea, Vote } from "@/lib/supabaseClient";
+import { supabase, Participant, DateIdea, Vote, IdeaCategory } from "@/lib/supabaseClient";
 
 const SESSION_KEY = "next-up-participant";
 
 type CostType = "free" | "budget";
+
+const CATEGORY_LABELS: Record<IdeaCategory, string> = {
+  restaurant: "Restaurant",
+  bar: "Bar",
+  park: "Park",
+  exercise: "Exercise",
+  other: "Other",
+};
+
+function categoryLabel(idea: DateIdea): string | null {
+  if (!idea.category) return null;
+  if (idea.category === "other") return idea.category_other?.trim() || "Other";
+  return CATEGORY_LABELS[idea.category];
+}
 
 function loadSession(): Participant | null {
   if (typeof window === "undefined") return null;
@@ -88,22 +102,28 @@ function JoinGate({ onJoined }: { onJoined: (p: Participant) => void }) {
   return (
     <div className="join-wrap">
       <div className="join-card">
-        <h1>Next Up</h1>
-        <p>Suggest date ideas, vote on your favorites, and keep track of what&rsquo;s coming up. Just tell us who you are.</p>
-        <form onSubmit={handleSubmit}>
-          <div>
-            <label className="field-label" htmlFor="name">Name</label>
-            <input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" />
+        <img src="/friends-photo.jpg" alt="The crew" className="join-photo" />
+        <div className="join-card-body">
+          <div className="join-heading">
+            <h1>Next Round</h1>
+            <span className="beta-badge">Beta</span>
           </div>
-          <div>
-            <label className="field-label" htmlFor="email">Email</label>
-            <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
-          </div>
-          {error && <span className="error-text">{error}</span>}
-          <button className="btn" type="submit" disabled={busy}>
-            {busy ? "One sec…" : "Continue"}
-          </button>
-        </form>
+          <p>Suggest plans, vote on your favorites, and keep track of what&rsquo;s coming up. Just tell us who you are.</p>
+          <form onSubmit={handleSubmit}>
+            <div>
+              <label className="field-label" htmlFor="name">Name</label>
+              <input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" />
+            </div>
+            <div>
+              <label className="field-label" htmlFor="email">Email</label>
+              <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+            </div>
+            {error && <span className="error-text">{error}</span>}
+            <button className="btn" type="submit" disabled={busy}>
+              {busy ? "One sec…" : "Continue"}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );
@@ -169,15 +189,23 @@ function App({ me, onLeave }: { me: Participant; onLeave: () => void }) {
     title: string;
     description: string;
     location: string;
+    social_link: string;
+    category: IdeaCategory;
+    category_other: string;
     cost_type: CostType;
     budget_amount: string;
+    proposed_date: string;
   }) {
     await supabase.from("date_ideas").insert({
       title: input.title.trim(),
       description: input.description.trim() || null,
       location: input.location.trim() || null,
+      social_link: input.social_link.trim() || null,
+      category: input.category,
+      category_other: input.category === "other" ? input.category_other.trim() || null : null,
       cost_type: input.cost_type,
       budget_amount: input.cost_type === "budget" && input.budget_amount ? Number(input.budget_amount) : null,
+      proposed_date: input.proposed_date || null,
       created_by: me.id,
       status: "suggested",
     });
@@ -210,8 +238,8 @@ function App({ me, onLeave }: { me: Participant; onLeave: () => void }) {
     <div className="shell">
       <header className="header">
         <div className="wordmark">
-          Next Up
-          <span>Date ideas, polls, and what&rsquo;s coming up</span>
+          Next Round<span className="beta-badge">Beta</span>
+          <span className="wordmark-sub">Date ideas, polls, and what&rsquo;s coming up</span>
         </div>
         <div className="whoami">
           {me.name}
@@ -243,6 +271,8 @@ function App({ me, onLeave }: { me: Participant; onLeave: () => void }) {
       ) : (
         <CalendarTab upcoming={upcoming} past={past} participants={participants} onMarkPast={markPast} />
       )}
+
+      <FeedbackFooter me={me} />
     </div>
   );
 }
@@ -261,13 +291,27 @@ function PollTab({
   participants: Record<string, Participant>;
   me: Participant;
   onVote: (idea: DateIdea) => void;
-  onAdd: (input: { title: string; description: string; location: string; cost_type: CostType; budget_amount: string }) => Promise<void>;
+  onAdd: (input: {
+    title: string;
+    description: string;
+    location: string;
+    social_link: string;
+    category: IdeaCategory;
+    category_other: string;
+    cost_type: CostType;
+    budget_amount: string;
+    proposed_date: string;
+  }) => Promise<void>;
   onSchedule: (idea: DateIdea, date: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
+  const [category, setCategory] = useState<IdeaCategory>("restaurant");
+  const [categoryOther, setCategoryOther] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
+  const [socialLink, setSocialLink] = useState("");
+  const [proposedDate, setProposedDate] = useState("");
   const [costType, setCostType] = useState<CostType>("free");
   const [budget, setBudget] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -276,11 +320,25 @@ function PollTab({
     e.preventDefault();
     if (!title.trim()) return;
     setSubmitting(true);
-    await onAdd({ title, description, location, cost_type: costType, budget_amount: budget });
+    await onAdd({
+      title,
+      description,
+      location,
+      social_link: socialLink,
+      category,
+      category_other: categoryOther,
+      cost_type: costType,
+      budget_amount: budget,
+      proposed_date: proposedDate,
+    });
     setSubmitting(false);
     setTitle("");
+    setCategory("restaurant");
+    setCategoryOther("");
     setDescription("");
     setLocation("");
+    setSocialLink("");
+    setProposedDate("");
     setCostType("free");
     setBudget("");
     setOpen(false);
@@ -297,11 +355,58 @@ function PollTab({
 
       {open && (
         <form className="form-grid card" onSubmit={handleSubmit} style={{ marginBottom: "1.75rem" }}>
-          <input placeholder="What's the idea?" value={title} onChange={(e) => setTitle(e.target.value)} required />
-          <textarea placeholder="Any details worth sharing" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+          <input
+            placeholder="Activity name — Place name"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+          />
+
           <div className="form-row">
-            <input placeholder="Location (optional)" value={location} onChange={(e) => setLocation(e.target.value)} />
+            <select value={category} onChange={(e) => setCategory(e.target.value as IdeaCategory)}>
+              <option value="restaurant">Restaurant</option>
+              <option value="bar">Bar</option>
+              <option value="park">Park</option>
+              <option value="exercise">Exercise</option>
+              <option value="other">Other</option>
+            </select>
+            {category === "other" && (
+              <input
+                placeholder="What kind of activity?"
+                value={categoryOther}
+                onChange={(e) => setCategoryOther(e.target.value)}
+              />
+            )}
           </div>
+
+          <textarea placeholder="Any details worth sharing" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+
+          <input
+            type="url"
+            placeholder="Google Maps link"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
+
+          <input
+            type="url"
+            placeholder="Social media link (optional)"
+            value={socialLink}
+            onChange={(e) => setSocialLink(e.target.value)}
+          />
+
+          <div className="form-row">
+            <div>
+              <label className="field-label" htmlFor="proposed-date">Date, if you already know it (optional)</label>
+              <input
+                id="proposed-date"
+                type="date"
+                value={proposedDate}
+                onChange={(e) => setProposedDate(e.target.value)}
+              />
+            </div>
+          </div>
+
           <div className="form-row">
             <div className="cost-toggle">
               <button type="button" className={costType === "free" ? "active" : ""} onClick={() => setCostType("free")}>
@@ -336,17 +441,31 @@ function PollTab({
             const ideaVotes = votesByIdea[idea.id] || [];
             const mine = ideaVotes.some((v) => v.participant_id === me.id);
             const suggester = idea.created_by ? participants[idea.created_by] : null;
+            const cat = categoryLabel(idea);
             return (
               <div className="card idea-card" key={idea.id}>
                 <div className="idea-main">
                   <h3>{idea.title}</h3>
                   {idea.description && <p className="idea-desc">{idea.description}</p>}
                   <div className="idea-meta">
+                    {cat && <span className="tag category">{cat}</span>}
                     <span className={`tag ${idea.cost_type}`}>
                       {idea.cost_type === "free" ? "Free" : idea.budget_amount ? `~$${idea.budget_amount}` : "Has a cost"}
                     </span>
-                    {idea.location && <span className="idea-location">{idea.location}</span>}
+                    {idea.proposed_date && (
+                      <span className="idea-location">📅 {formatDay(idea.proposed_date).month} {formatDay(idea.proposed_date).day}</span>
+                    )}
                   </div>
+                  {(idea.location || idea.social_link) && (
+                    <div className="idea-links">
+                      {idea.location && (
+                        <a href={idea.location} target="_blank" rel="noreferrer">📍 Google Maps</a>
+                      )}
+                      {idea.social_link && (
+                        <a href={idea.social_link} target="_blank" rel="noreferrer">🔗 Social</a>
+                      )}
+                    </div>
+                  )}
                   {suggester && <div className="suggested-by">Suggested by {suggester.name}</div>}
                   <div className="schedule-row">
                     <input
@@ -417,6 +536,7 @@ function CalendarTab({
             {items.map((idea) => {
               const { day, dow } = formatDay(idea.proposed_date!);
               const suggester = idea.created_by ? participants[idea.created_by] : null;
+              const cat = categoryLabel(idea);
               return (
                 <div className="calendar-item" key={idea.id}>
                   <div className="calendar-date">
@@ -427,11 +547,21 @@ function CalendarTab({
                     <h3>{idea.title}</h3>
                     {idea.description && <p className="idea-desc">{idea.description}</p>}
                     <div className="idea-meta">
+                      {cat && <span className="tag category">{cat}</span>}
                       <span className={`tag ${idea.cost_type}`}>
                         {idea.cost_type === "free" ? "Free" : idea.budget_amount ? `~$${idea.budget_amount}` : "Has a cost"}
                       </span>
-                      {idea.location && <span className="idea-location">{idea.location}</span>}
                     </div>
+                    {(idea.location || idea.social_link) && (
+                      <div className="idea-links">
+                        {idea.location && (
+                          <a href={idea.location} target="_blank" rel="noreferrer">📍 Google Maps</a>
+                        )}
+                        {idea.social_link && (
+                          <a href={idea.social_link} target="_blank" rel="noreferrer">🔗 Social</a>
+                        )}
+                      </div>
+                    )}
                     {suggester && <div className="suggested-by">Suggested by {suggester.name}</div>}
                   </div>
                   <button className="btn secondary" onClick={() => onMarkPast(idea)}>
@@ -458,5 +588,40 @@ function CalendarTab({
         </div>
       )}
     </div>
+  );
+}
+
+function FeedbackFooter({ me }: { me: Participant }) {
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!message.trim()) return;
+    setSubmitting(true);
+    await supabase.from("feedback").insert({ participant_id: me.id, message: message.trim() });
+    setSubmitting(false);
+    setSent(true);
+    setMessage("");
+    setTimeout(() => setSent(false), 4000);
+  }
+
+  return (
+    <footer className="app-footer">
+      <h3>Something not working? Got an idea?</h3>
+      <p>Send a note straight to Bryan.</p>
+      <form className="feedback-form" onSubmit={handleSubmit}>
+        <textarea
+          rows={2}
+          placeholder="Tell Bryan what's up…"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+        />
+        <button className="btn secondary" type="submit" disabled={submitting || !message.trim()}>
+          {submitting ? "Sending…" : sent ? "Sent ✓" : "Send feedback"}
+        </button>
+      </form>
+    </footer>
   );
 }

@@ -94,13 +94,27 @@ button:focus-visible {
   font-size: 1.65rem;
 }
 
-.wordmark span {
+.wordmark-sub {
   color: var(--ink-soft);
   font-family: var(--font-body);
   font-size: 0.85rem;
   display: block;
   margin-top: 0.15rem;
   font-weight: 400;
+}
+
+.beta-badge {
+  display: inline-block;
+  vertical-align: middle;
+  background: var(--accent-budget-bg);
+  color: var(--accent-budget);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  margin-left: 0.5rem;
 }
 
 .whoami {
@@ -353,12 +367,29 @@ button:focus-visible {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  padding: 2rem;
+  overflow: hidden;
+}
+
+.join-photo {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+}
+
+.join-card-body {
+  padding: 1.75rem 2rem 2rem;
+}
+
+.join-heading {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.3rem;
 }
 
 .join-card h1 {
   font-size: 1.6rem;
-  margin-bottom: 0.3rem;
+  margin-bottom: 0;
 }
 
 .join-card p {
@@ -432,4 +463,56 @@ button:focus-visible {
   font-size: 0.78rem;
   color: var(--ink-faint);
   margin-top: 0.35rem;
+}
+
+.tag.category {
+  background: var(--surface-alt);
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+}
+
+.idea-links {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.idea-links a {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  text-decoration: underline;
+}
+
+.idea-links a:hover {
+  color: var(--ink);
+}
+
+.app-footer {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.app-footer h3 {
+  font-size: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.app-footer p {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+
+.feedback-form {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.feedback-form textarea {
+  flex: 1;
+  min-width: 220px;
 }

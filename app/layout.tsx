@@ -15,8 +15,8 @@ const body = Work_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Next Up — date ideas & plans",
-  description: "Suggest date ideas, vote, and see what's coming up.",
+  title: "Next Round — plans with the crew",
+  description: "Suggest plans, vote, and see what's coming up.",
 };
 
 export default function RootLayout({
