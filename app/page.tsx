@@ -339,6 +339,10 @@ function App({ me, onLeave }: { me: Participant; onLeave: () => void }) {
       .eq("id", idea.id);
   }
 
+  async function moveToPoll(idea: DateIdea) {
+    await supabase.from("date_ideas").update({ status: "suggested" }).eq("id", idea.id);
+  }
+
   async function updateIdea(id: string, fields: Record<string, unknown>) {
     await supabase.from("date_ideas").update(fields).eq("id", id);
   }
@@ -396,6 +400,7 @@ function App({ me, onLeave }: { me: Participant; onLeave: () => void }) {
           participants={participants}
           onMarkPast={markPast}
           onRestore={restoreIdea}
+          onMoveToPoll={moveToPoll}
           onUpdate={updateIdea}
         />
       )}
@@ -635,6 +640,7 @@ function CalendarTab({
   participants,
   onMarkPast,
   onRestore,
+  onMoveToPoll,
   onUpdate,
 }: {
   upcoming: DateIdea[];
@@ -642,6 +648,7 @@ function CalendarTab({
   participants: Record<string, Participant>;
   onMarkPast: (idea: DateIdea) => void;
   onRestore: (idea: DateIdea) => void;
+  onMoveToPoll: (idea: DateIdea) => void;
   onUpdate: (id: string, fields: Record<string, unknown>) => Promise<void>;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -720,6 +727,9 @@ function CalendarTab({
                     <button className="btn secondary" onClick={() => onMarkPast(idea)}>
                       Mark as past
                     </button>
+                    <button className="btn secondary" onClick={() => onMoveToPoll(idea)}>
+                      Move back to poll
+                    </button>
                     <button className="btn secondary" onClick={() => setEditingId(idea.id)}>
                       Edit
                     </button>
@@ -755,6 +765,9 @@ function CalendarTab({
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                   <button className="btn secondary" onClick={() => onRestore(idea)}>
                     Move back to Upcoming
+                  </button>
+                  <button className="btn secondary" onClick={() => onMoveToPoll(idea)}>
+                    Move back to poll
                   </button>
                   <button className="btn secondary" onClick={() => setEditingId(idea.id)}>
                     Edit
